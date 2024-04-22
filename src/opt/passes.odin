@@ -5,7 +5,7 @@ import "../sb"
 // GLOBAL PASSES
 
 perform_remove_dead :: proc() {
-	graph := sb.backend()
+	g := sb.graph()
 
 	// TODO: Remove unused functions
 
@@ -25,16 +25,16 @@ perform_remove_dead :: proc() {
 		}
 	}
 
-	for function in graph.functions {
+	for function in g.functions {
 		add_ancestors(&ancestors, function.end)
 	}
 
 	// Remove all non-ancestors
-	for i := 0; i < len(graph.nodes); i += 1 {
-		#partial switch graph.nodes[i].base.type {
+	for i := 0; i < len(g.nodes); i += 1 {
+		#partial switch g.nodes[i].base.type {
 		case .Start, .End: // do nothing
 		case .Pass:
-			varargs := graph.nodes[i].pass.varargs
+			varargs := g.nodes[i].pass.varargs
 			if varargs > 0 {
 				// check if no inputs are End ancestors
 				// if so, this Pass node may also be destroyed
@@ -46,14 +46,14 @@ perform_remove_dead :: proc() {
 					}
 				}
 				if all_empty {
-					sb.node_destroy(graph.nodes[i])
-					graph.nodes[i] = sb.node_nil()
+					sb.node_destroy(g.nodes[i])
+					g.nodes[i] = sb.node_nil()
 				}
 			}
 		case:
 			if !(sb.Node(i) in ancestors) {
-				sb.node_destroy(graph.nodes[i])
-				graph.nodes[i] = sb.node_nil()
+				sb.node_destroy(g.nodes[i])
+				g.nodes[i] = sb.node_nil()
 			}
 		}
 	}
@@ -62,7 +62,7 @@ perform_remove_dead :: proc() {
 // PER-NODE PASSES
 
 perform_pass :: proc(pass: #type proc(n: sb.Node)) {
-	for i := 0; i < len(sb.backend().nodes); i += 1 {
+	for i := 0; i < len(sb.graph().nodes); i += 1 {
 		pass(sb.Node(i))
 	}
 }
@@ -100,8 +100,8 @@ pass_unalias_memory :: proc(n: sb.Node) {
 		if sb.node_output_type(n, 0) == sb.type_memory() {
 
 			// move node, create passthrough
-			new_n := sb.push(sb.backend().nodes[int(n)])
-			sb.backend().nodes[int(n)] = sb.node_pass(sb.node_outputs(new_n))
+			new_n := sb.push(sb.graph().nodes[int(n)])
+			sb.graph().nodes[int(n)] = sb.node_pass(sb.node_outputs(new_n))
 
 			if sb.node_type(old_parent) == .Merge {
 				// if our old parent was a merge node, output to there

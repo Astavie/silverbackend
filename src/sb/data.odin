@@ -105,9 +105,9 @@ type_size :: proc(type: Data_Type) -> u16 {
 		return 0
 	case .Integer:
 		// TODO: round UP
-		return type.integer.bits / backend().target.char_bits
+		return type.integer.bits / graph().target.char_bits
 	case .Pointer:
-		return backend().target.ptr_size
+		return graph().target.ptr_size
 	}
 	return 0
 }

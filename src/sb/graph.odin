@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:mem"
 import "core:strings"
 
-Backend :: struct {
+Graph :: struct {
 	nodes:     [dynamic]Node_Data,
 	functions: [dynamic]Function_Data,
 	target:    Target,
@@ -16,23 +16,23 @@ Target :: struct {
 	char_bits:      u16,
 }
 
-backend :: proc() -> ^Backend {
-	return transmute(^Backend)context.user_ptr
+graph :: proc() -> ^Graph {
+	return transmute(^Graph)context.user_ptr
 }
 
 push :: proc(node_data: Node_Data) -> (Node, mem.Allocator_Error) #optional_allocator_error {
-	sb := backend()
-	_, err := append(&sb.nodes, node_data)
-	return Node(len(sb.nodes) - 1), err
+	g := graph()
+	_, err := append(&g.nodes, node_data)
+	return Node(len(g.nodes) - 1), err
 }
 
 sbprint_graph :: proc(buf: ^strings.Builder) {
-	sb := backend()
+	g := graph()
 
 	fmt.sbprintln(buf, "digraph {")
 	fmt.sbprintln(buf, "graph [rankdir = \"LR\"]")
-	for i in 0 ..< len(sb.nodes) {
-		node := sb.nodes[i]
+	for i in 0 ..< len(g.nodes) {
+		node := g.nodes[i]
 
 		#partial switch node.base.type {
 		case .Pass:
@@ -78,7 +78,7 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 			fmt.sbprintln(buf, "\"]")
 		}
 	}
-	for n in 0 ..< len(sb.nodes) {
+	for n in 0 ..< len(g.nodes) {
 		#partial switch node_type(Node(n)) {
 		case .Pass:
 			continue

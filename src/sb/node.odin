@@ -336,15 +336,15 @@ node_destroy :: proc(node: Node_Data) {
 }
 
 node_type :: proc(node: Node) -> Node_Type {
-	return backend().nodes[int(node)].base.type
+	return graph().nodes[int(node)].base.type
 }
 
 node_data :: proc(node: Node) -> ^Node_Data {
-	return &backend().nodes[int(node)]
+	return &graph().nodes[int(node)]
 }
 
 node_inputs :: proc(node: Node) -> []Node_Edge {
-	sb := backend()
+	sb := graph()
 	node := &sb.nodes[int(node)]
 
 	count: u32
@@ -408,12 +408,12 @@ node_outputs :: proc(
 node_output_type :: proc(node: Node, idx: u32) -> Maybe(Data_Type) {
 	inputs := node_inputs(node)
 
-	graph := backend()
-	node := &graph.nodes[int(node)]
+	g := graph()
+	node := &g.nodes[int(node)]
 
 	switch node.base.type {
 	case .Start:
-		inputs := graph.functions[int(node.start.function)].inputs
+		inputs := g.functions[int(node.start.function)].inputs
 		if int(idx) < len(inputs) {
 			return inputs[int(idx)]
 		}
@@ -461,7 +461,7 @@ node_output_type :: proc(node: Node, idx: u32) -> Maybe(Data_Type) {
 			return type_memory()
 		}
 		if idx == 2 {
-			return graph.target.syscall_result
+			return g.target.syscall_result
 		}
 	case .Pass:
 		if int(idx) < len(inputs) {

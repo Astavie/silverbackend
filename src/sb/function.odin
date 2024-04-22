@@ -32,16 +32,16 @@ start_function :: proc(
 	fun: Function,
 	err: mem.Allocator_Error,
 ) #optional_allocator_error {
-	sb := backend()
-	fun = Function(len(sb.functions))
+	g := graph()
+	fun = Function(len(g.functions))
 
 	inputs := slice.clone(inputs, allocator, loc)
 	outputs := slice.clone(outputs, allocator, loc)
 
-	start := Node(len(sb.nodes))
-	append(&sb.nodes, node_start(fun)) or_return
+	start := Node(len(g.nodes))
+	append(&g.nodes, node_start(fun)) or_return
 	append(
-		&sb.functions,
+		&g.functions,
 		Function_Data{inputs = inputs, outputs = outputs, start = start, symbol = symbol},
 	) or_return
 
@@ -54,10 +54,10 @@ end_function :: proc(
 	allocator := context.allocator,
 	loc := #caller_location,
 ) -> mem.Allocator_Error {
-	sb := backend()
+	g := graph()
 
 	node := push(node_end(fun, outputs, allocator, loc) or_return) or_return
-	sb.functions[int(fun)].end = node
+	g.functions[int(fun)].end = node
 
 	return .None
 }

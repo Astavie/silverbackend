@@ -9,14 +9,14 @@ import "opt"
 import "sb"
 
 main_err :: proc() -> mem.Allocator_Error {
-	graph := sb.backend()
+	g := sb.graph()
 
 	fun := sb.start_function(
 		{sb.type_io()},
 		{sb.type_io()},
 		{name = "_start", linkage = .External},
 	) or_return
-	start := graph.functions[int(fun)].start
+	start := g.functions[int(fun)].start
 
 	msg_str := transmute([]u8)string("Hello, World!\n")
 
@@ -66,11 +66,11 @@ read_poisson :: proc() -> mem.Allocator_Error {
 }
 
 main :: proc() {
-	graph: sb.Backend
-	graph.target.char_bits = 8
-	graph.target.ptr_size = 8
-	graph.target.syscall_result = sb.type_int(64)
-	context.user_ptr = &graph
+	g: sb.Graph
+	g.target.char_bits = 8
+	g.target.ptr_size = 8
+	g.target.syscall_result = sb.type_int(64)
+	context.user_ptr = &g
 
 	// main_err()
 	read_poisson()
