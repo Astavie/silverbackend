@@ -54,16 +54,12 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 				fmt.sbprintf(buf, "%d [label = \"%d\"]\n", i, node.integer.int_literal)
 			}
 		case:
+			// node type
 			fmt.sbprintf(buf, "%d [shape = \"record\", label = \"", i)
-
-			#partial switch node.base.type {
-			case .Member_Access:
-				fmt.sbprintf(buf, "offset %d", node.member_access.offset)
-			case:
-				fmt.sbprint(buf, node.base.type)
-			}
-
+			fmt.sbprint(buf, node.base.type)
 			fmt.sbprint(buf, "|{{")
+
+			// edges
 			for edge, i in node_inputs(Node(i)) {
 				fmt.sbprintf(buf, "<i%d>", i)
 				tym := node_output_type(edge.node, edge.output)
@@ -87,6 +83,21 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 				}
 			}
 			fmt.sbprint(buf, "}}|")
+
+			// extra data
+			#partial switch node.base.type {
+			case .Local:
+				fmt.sbprintf(buf, "size %d", node.local.size)
+			case .Store, .Load:
+				switch g.target.endian {
+				case .Little:
+					fmt.sbprint(buf, "little-endian")
+				case .Big:
+					fmt.sbprint(buf, "big-endian")
+				}
+			case .Member_Access:
+				fmt.sbprintf(buf, "offset %d", node.member_access.offset)
+			}
 
 			fmt.sbprintln(buf, "\"]")
 		}

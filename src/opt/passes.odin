@@ -66,7 +66,9 @@ perform_remove_dead :: proc() {
 
 perform_pass :: proc(pass: #type proc(n: sb.Node)) {
 	for i := 0; i < len(sb.graph().nodes); i += 1 {
-		pass(sb.Node(i))
+		if sb.node_type(sb.Node(i)) != .Pass {
+			pass(sb.Node(i))
+		}
 	}
 }
 
