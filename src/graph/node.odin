@@ -1,4 +1,4 @@
-package sb
+package graph
 
 import "base:intrinsics"
 import "core:math/big"

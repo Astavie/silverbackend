@@ -1,6 +1,6 @@
-package opt
+package optimization
 
-import "../sb"
+import sb "../graph"
 import "core:math"
 import "core:math/big"
 import "core:slice"

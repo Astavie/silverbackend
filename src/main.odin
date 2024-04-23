@@ -5,8 +5,8 @@ import "core:mem"
 import "core:slice"
 import "core:strings"
 
-import "opt"
-import "sb"
+import sb "graph"
+import opt "optimization"
 
 main_err :: proc() -> mem.Allocator_Error {
 	g := sb.graph()

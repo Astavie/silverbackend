@@ -1,4 +1,4 @@
-package sb
+package graph
 
 import "core:mem"
 import "core:slice"
