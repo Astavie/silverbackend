@@ -1,6 +1,8 @@
 package opt
 
 import "../sb"
+import "core:math/big"
+import "core:slice"
 
 do_nodes_alias :: proc(a: sb.Node, b: sb.Node) -> bool {
 
@@ -157,4 +159,37 @@ simple_memory_ancestor :: proc(a: sb.Node, b: sb.Node) -> Maybe(sb.Node) {
 			return nil
 		}
 	}
+}
+
+populate_int_buffer :: proc(
+	buf: ^[dynamic]u16,
+	data: ^sb.Node_Data,
+	buf_offset: u16,
+) -> big.Error {
+	size := sb.type_size(data.integer.int_type)
+	resize(buf, int(buf_offset + size))
+
+	char_bits := sb.graph().target.char_bits
+	bit_mask: i32 = (1 << char_bits) - 1
+
+	current := int(buf_offset)
+
+	if data.integer.int_big != nil {
+		num := data.integer.int_big
+		for !(big.is_zero(num) or_return) {
+			defer current += 1
+			buf[current] = u16(big.int_bitfield_extract(num, 0, int(char_bits)) or_return)
+			big.int_shr(num, num, int(char_bits)) or_return
+		}
+	} else {
+		// FIXME: I don't think this works with negative ints yet
+		num := data.integer.int_literal
+		for num != 0 {
+			defer current += 1
+			buf[current] = u16(num & bit_mask)
+			num = num >> char_bits
+		}
+	}
+
+	return .Okay
 }

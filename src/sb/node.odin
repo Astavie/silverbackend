@@ -5,21 +5,6 @@ import "core:math/big"
 import "core:mem"
 import "core:slice"
 
-@(private)
-_log2_inc :: proc(x: u32) -> u32 {
-	return size_of(u32) * 8 - intrinsics.count_leading_zeros(x)
-}
-
-@(private)
-_log2_floor :: proc(x: u32) -> u32 {
-	return _log2_inc(x) - 1
-}
-
-@(private)
-_log2_ceil :: proc(x: u32) -> u32 {
-	return _log2_inc(x - 1)
-}
-
 Node_Type :: enum u16 {
 	// (...) -> (...) + varargs
 	// a Node_Data with all 0 will be an empty Pass node
@@ -188,7 +173,7 @@ node_member_access :: proc(
 		space := ptr.pointer.address_space
 		align := ptr.pointer.align_exp
 		if offset > 0 {
-			align = min(align, u8(_log2_floor(offset)))
+			align = min(align, u8(intrinsics.count_trailing_zeros(offset)))
 		}
 
 		inputs, err := slice.clone([]Node_Edge{edge}, allocator, loc)

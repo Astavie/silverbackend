@@ -1,6 +1,7 @@
 package sb
 
 import "core:fmt"
+import "core:math"
 import "core:strings"
 
 Data_Type_Enum :: enum u8 {
@@ -104,8 +105,9 @@ type_size :: proc(type: Data_Type) -> u16 {
 	case .Control:
 		return 0
 	case .Integer:
-		// TODO: round UP
-		return type.integer.bits / graph().target.char_bits
+		div, mod := math.divmod(type.integer.bits, graph().target.char_bits)
+		if mod > 0 do div += 1
+		return div
 	case .Pointer:
 		return graph().target.ptr_size
 	}

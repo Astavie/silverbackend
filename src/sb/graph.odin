@@ -1,6 +1,7 @@
 package sb
 
 import "core:fmt"
+import "core:math/big"
 import "core:mem"
 import "core:strings"
 
@@ -10,10 +11,16 @@ Graph :: struct {
 	target:    Target,
 }
 
+Endian :: enum {
+	Little,
+	Big,
+}
+
 Target :: struct {
 	syscall_result: Data_Type,
 	ptr_size:       u16,
 	char_bits:      u16,
+	endian:         Endian,
 }
 
 graph :: proc() -> ^Graph {
@@ -38,8 +45,14 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 		case .Pass:
 			continue
 		case .Integer:
-			// TODO: check if big int
-			fmt.sbprintf(buf, "%d [label = \"%d\"]\n", i, node.integer.int_literal)
+			if node.integer.int_big != nil {
+				// TODO: handle error
+				str, err := big.int_to_string(node.integer.int_big)
+				defer delete(str)
+				fmt.sbprintf(buf, "%d [label = \"%s\"]\n", i, str)
+			} else {
+				fmt.sbprintf(buf, "%d [label = \"%d\"]\n", i, node.integer.int_literal)
+			}
 		case:
 			fmt.sbprintf(buf, "%d [shape = \"record\", label = \"", i)
 

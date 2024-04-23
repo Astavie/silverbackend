@@ -1,6 +1,9 @@
 package opt
 
 import "../sb"
+import "core:math"
+import "core:math/big"
+import "core:slice"
 
 // GLOBAL PASSES
 
@@ -64,6 +67,227 @@ perform_remove_dead :: proc() {
 perform_pass :: proc(pass: #type proc(n: sb.Node)) {
 	for i := 0; i < len(sb.graph().nodes); i += 1 {
 		pass(sb.Node(i))
+	}
+}
+
+pass_optimize_merge :: proc(n: sb.Node) {
+	// perform on Merge nodes
+	#partial switch sb.node_type(n) {
+	case .Merge:
+	case:
+		return
+	}
+
+	// NOTE: a simple slice might be faster than map?
+	edges := make(map[sb.Node_Edge]struct {})
+	defer delete(edges)
+
+	inputs := sb.node_inputs(n)
+	length := len(inputs)
+
+	for i := len(inputs) - 1; i >= 0; i -= 1 {
+		input := sb.canonical_edge(inputs[i])
+		if input in edges {
+			// this is a duplicate, swap it out
+			length -= 1
+			slice.swap(inputs, i, length)
+		} else {
+			edges[input] = {}
+		}
+	}
+
+	if length < len(inputs) {
+		data := sb.node_data(n)
+		data.merge.varargs = u32(length)
+	}
+
+	if length == 1 {
+		// change type of node to Pass 
+		// this is allowed because Merge and Pass have the same structure
+		data := sb.node_data(n)
+		data.merge.type = .Pass
+	}
+}
+
+pass_merge_stores :: proc(n: sb.Node) {
+	// perform on Memory Merge nodes
+	#partial switch sb.node_type(n) {
+	case .Merge:
+		if sb.node_output_type(n, 0) != sb.type_memory() do return
+	case:
+		return
+	}
+
+	// NOTE: this might be optimized using an Interval tree or a Segment tree?
+
+	ConstantStore :: struct {
+		merge_input: u32,
+		ptr_offset:  u32,
+		int_value:   ^sb.Node_Data,
+	}
+
+	// ptr origin -> constant stores
+	// NOTE: a simple slice might be faster than map?
+	stores := make(map[sb.Node][dynamic]ConstantStore)
+	defer delete(stores)
+
+	for inputp, i in sb.node_inputs(n) {
+
+		// check if input is a store
+		input := sb.canonical_edge(inputp)
+		if sb.node_type(input.node) != .Store do continue
+
+		// check if input value is a constant integer
+		value := sb.node_parent(input.node, 2)
+		if sb.node_type(value.node) != .Integer do continue
+
+		// get pointer origin
+		// TODO: count Node_Type.Array_Access as an origin point
+		// FIXME: get origin EDGE instead of just the node
+		ptr := sb.node_parent(input.node, 1).node
+		origin := simple_ptr_origin(ptr)
+		offset, ok := simple_ptr_offset(ptr, origin).?
+		if !ok do continue
+
+		// add to the map
+		if !(origin in stores) {
+			stores[origin] = make([dynamic]ConstantStore)
+		}
+		append(
+			&stores[origin],
+			ConstantStore {
+				merge_input = u32(i),
+				ptr_offset = offset,
+				int_value = sb.node_data(value.node),
+			},
+		)
+	}
+
+	char_bits := sb.graph().target.char_bits
+
+	for origin, constants in stores {
+		defer delete(constants)
+		if len(constants) == 1 do continue
+
+		// sort by starting offset
+		slice.sort_by_key(constants[:], proc(c: ConstantStore) -> u32 {return c.ptr_offset})
+
+		current := 0
+		next := 1
+
+		for current < len(constants) {
+			from_offset := constants[current].ptr_offset
+
+			int_value := constants[current].int_value
+			div, to_bits := math.divmod(int_value.integer.int_type.integer.bits, char_bits)
+			to_offset := from_offset + u32(div)
+
+			// create u16 buffer
+			// NOTE: this does not support targets with char size bigger than 16 bits
+			buf := make([dynamic]u16)
+			defer delete(buf)
+
+			populate_int_buffer(&buf, int_value, 0)
+
+			// merge following stores
+			for next < len(constants) {
+				offset := constants[next].ptr_offset
+				if offset <= to_offset {
+					defer next += 1
+
+					int_value2 := constants[next].int_value
+					div2, to_bits2 := math.divmod(
+						int_value2.integer.int_type.integer.bits,
+						char_bits,
+					)
+					to_offset2 := offset + u32(div2)
+
+					if to_offset2 > to_offset {
+						to_offset = to_offset2
+						to_bits2 = to_bits
+					} else if to_bits2 > to_bits {
+						to_bits2 = to_bits
+					}
+
+					// FIXME: this can overflow!
+					populate_int_buffer(&buf, int_value2, u16(offset - from_offset))
+				} else {
+					break
+				}
+			}
+
+			defer current = next
+
+			// get integer literal
+			int_big := big.Int{}
+			switch sb.graph().target.endian {
+			case .Little:
+				slice.reverse(buf[:])
+				for i in buf {
+					big.int_shl(&int_big, &int_big, int(char_bits))
+					big.int_add_digit(&int_big, &int_big, big.DIGIT(i))
+				}
+			case .Big:
+				for i, idx in buf {
+					if to_bits > 0 && idx == len(buf) - 1 {
+						big.int_shl(&int_big, &int_big, int(to_bits))
+					} else {
+						big.int_shl(&int_big, &int_big, int(char_bits))
+					}
+					big.int_add_digit(&int_big, &int_big, big.DIGIT(i))
+				}
+			}
+
+			// FIXME: this can overflow!
+			int_size := u16(to_offset - from_offset) * char_bits + to_bits
+			int_node := sb.push(sb.node_constant(sb.type_int(int_size), int_big))
+
+			// create offset pointer
+			ptr_node := origin
+
+			// FIXME: get origin EDGE instead of just the node 
+			ptr_edge := sb.Node_Edge{ptr_node, 0}
+			if sb.node_type(ptr_node) == .Local {
+				ptr_edge.output = 1
+			}
+
+			if from_offset != 0 {
+				ptr_node = sb.push(sb.node_member_access(ptr_edge, from_offset))
+				ptr_edge = sb.Node_Edge{ptr_node, 0}
+			}
+
+			// create merged world
+			// NOTE: a simple slice might be faster than map?
+			worlds := make(map[sb.Node_Edge]struct {})
+			defer delete(worlds)
+
+			for i in current ..< next {
+				world := sb.node_parent(sb.node_parent(n, int(constants[i].merge_input)).node, 0)
+				worlds[world] = {}
+			}
+
+			world_edge: sb.Node_Edge
+			if len(worlds) == 1 {
+				for edge in worlds {
+					world_edge = edge
+				}
+			} else {
+				// TODO: handle err
+				keys, err := slice.map_keys(worlds)
+				defer delete(keys)
+				// TODO: this clones the keys again for no reason
+				world_edge = {sb.push(sb.node_merge(keys)), 0}
+			}
+
+			// create store
+			store_node := sb.push(sb.node_store(world_edge, ptr_edge, {int_node, 0}))
+
+			// redirect merge inputs to new store
+			inputs := sb.node_inputs(n)
+			for i in current ..< next {
+				inputs[int(constants[i].merge_input)] = {store_node, 0}
+			}
+		}
 	}
 }
 

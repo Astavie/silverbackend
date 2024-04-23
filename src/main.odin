@@ -23,7 +23,7 @@ main_err :: proc() -> mem.Allocator_Error {
 	one := sb.push(sb.node_constant(sb.type_int(64), 1)) or_return
 	msg_size := sb.push(sb.node_constant(sb.type_int(64), i32(len(msg_str)))) or_return
 
-	msg := sb.push(sb.node_local(u32(len(msg_str) + 1), 0, 0)) or_return
+	msg := sb.push(sb.node_local(u32(len(msg_str) + 1), 3, 0)) or_return
 
 	world := sb.Node_Edge {
 		node = msg,
@@ -70,10 +70,11 @@ main :: proc() {
 	g.target.char_bits = 8
 	g.target.ptr_size = 8
 	g.target.syscall_result = sb.type_int(64)
+	g.target.endian = .Little
 	context.user_ptr = &g
 
-	// main_err()
-	read_poisson()
+	main_err()
+	// read_poisson()
 
 	buf := strings.builder_make_none()
 	sb.sbprint_graph(&buf)
@@ -81,7 +82,9 @@ main :: proc() {
 
 	opt.perform_pass(opt.pass_unalias_memory)
 	opt.perform_pass(opt.pass_poison_read)
+	opt.perform_pass(opt.pass_merge_stores)
 	opt.perform_remove_dead()
+	opt.perform_pass(opt.pass_optimize_merge)
 
 	buf2 := strings.builder_make_none()
 	sb.sbprint_graph(&buf2)
