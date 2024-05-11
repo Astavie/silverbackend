@@ -55,27 +55,30 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 			if node.integer.int_big != nil {
 				fmt.sbprintf(buf, "%d [shape = \"record\", label = \"", i)
 
-				switch g.target.endian {
-				case .Little:
-					template_buf := strings.builder_make_none()
-					fmt.sbprintf(&template_buf, "%%0%dx ", g.target.char_bits / 4)
-					template := strings.to_string(template_buf)
-					defer delete(template)
+				chars := type_size(node.integer.int_type)
+				char_bits := g.target.char_bits
 
-					num: big.Int
-					or_panic(0, big.copy(&num, node.integer.int_big))
-					for !(or_panic(big.is_zero(&num))) {
-						byte := or_panic(
-							big.int_bitfield_extract(&num, 0, int(g.target.char_bits)),
-						)
-						big.shr(&num, &num, int(g.target.char_bits))
+				template_buf := strings.builder_make_none()
+				fmt.sbprintf(&template_buf, "%%0%dx ", (char_bits - 1) / 4 + 1)
+				template := strings.to_string(template_buf)
+				defer delete(template)
 
-						fmt.sbprintf(buf, template, byte)
+				for i in 0 ..< chars {
+					j := i
+					if g.target.endian == .Big {
+						j = chars - i - 1
 					}
-					strings.pop_byte(buf)
-				case .Big:
-					panic("todo")
+
+					byte := or_panic(
+						big.int_bitfield_extract(
+							node.integer.int_big,
+							int(j) * int(char_bits),
+							int(char_bits),
+						),
+					)
+					fmt.sbprintf(buf, template, byte)
 				}
+				strings.pop_byte(buf)
 
 				fmt.sbprintln(buf, "\"]")
 			} else {
