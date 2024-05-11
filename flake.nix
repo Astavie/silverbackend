@@ -22,6 +22,7 @@
 
           buildInputs = [
             graphviz
+            binaryen
           ];
 
         };
