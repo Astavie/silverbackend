@@ -128,9 +128,9 @@ pass_merge_stores :: proc(n: sb.Node) {
 		int_value:   ^sb.Node_Data,
 	}
 
-	// ptr origin -> constant stores
+	// map from "ptr origin" -> "constant stores"
 	// NOTE: a simple slice might be faster than map?
-	stores := make(map[sb.Node][dynamic]ConstantStore)
+	stores := make(map[sb.Node_Edge][dynamic]ConstantStore)
 	defer delete(stores)
 
 	for inputp, i in sb.node_inputs(n) {
@@ -144,12 +144,8 @@ pass_merge_stores :: proc(n: sb.Node) {
 		if sb.node_type(value.node) != .Integer do continue
 
 		// get pointer origin
-		// TODO: count Node_Type.Array_Access as an origin point
-		// FIXME: get origin EDGE instead of just the node
-		ptr := sb.node_parent(input.node, 1).node
-		origin := simple_ptr_origin(ptr)
-		offset, ok := simple_ptr_offset(ptr, origin).?
-		if !ok do continue
+		ptr := sb.node_parent(input.node, 1)
+		origin, offset := simple_ptr_offset(ptr)
 
 		// add to the map
 		if !(origin in stores) {
@@ -245,10 +241,8 @@ pass_merge_stores :: proc(n: sb.Node) {
 			int_node := sb.push(sb.node_constant(sb.type_int(int_size), int_big))
 
 			// create offset pointer
-			ptr_node := origin
-
-			// FIXME: get origin EDGE instead of just the node 
-			ptr_edge := sb.Node_Edge{ptr_node, 0}
+			ptr_edge := origin
+			ptr_node := origin.node
 			if sb.node_type(ptr_node) == .Local {
 				ptr_edge.output = 1
 			}

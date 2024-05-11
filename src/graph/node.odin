@@ -177,8 +177,8 @@ node_member_access :: proc(
 		}
 
 		inputs, err := slice.clone([]Node_Edge{edge}, allocator, loc)
-		return  {
-				member_access =  {
+		return {
+				member_access = {
 					type = .Member_Access,
 					ptr_type = type_ptr(align, space),
 					offset = offset,

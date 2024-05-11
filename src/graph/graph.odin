@@ -116,13 +116,6 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 			#partial switch node.base.type {
 			case .Local:
 				fmt.sbprintf(buf, "size %d", node.local.size)
-			case .Store, .Load:
-				switch g.target.endian {
-				case .Little:
-					fmt.sbprint(buf, "little-endian")
-				case .Big:
-					fmt.sbprint(buf, "big-endian")
-				}
 			case .Member_Access:
 				fmt.sbprintf(buf, "offset %d", node.member_access.offset)
 			}

@@ -45,7 +45,7 @@ do_nodes_alias :: proc(a: sb.Node, b: sb.Node) -> bool {
 	if found, other, ok := check(a, b, .End); ok {
 		// check if other is a Store to a Local
 		if sb.node_type(other) == .Store {
-			ptr := sb.node_inputs(other)[1].node
+			ptr := sb.node_inputs(other)[1]
 			return !is_ptr_local(ptr)
 		}
 	}
@@ -53,17 +53,13 @@ do_nodes_alias :: proc(a: sb.Node, b: sb.Node) -> bool {
 	if found, other, ok := check(a, b, .Store); ok {
 		// check if other is a Store to the same pointer at a different offset
 		if sb.node_type(other) == .Store {
-			ptr_a := sb.node_inputs(found)[1].node
-			ptr_b := sb.node_inputs(other)[1].node
-			origin := simple_ptr_origin(ptr_a)
-			if origin == simple_ptr_origin(ptr_b) {
-				offset_a := simple_ptr_offset(ptr_a, origin)
-				offset_b := simple_ptr_offset(ptr_b, origin)
-
-				// TODO: take overlapping pointers into accouht
-				if offset_a != nil && offset_b != nil && offset_a != offset_b {
-					return false
-				}
+			ptr_a := sb.node_inputs(found)[1]
+			ptr_b := sb.node_inputs(other)[1]
+			origin_a, offset_a := simple_ptr_offset(ptr_a)
+			origin_b, offset_b := simple_ptr_offset(ptr_b)
+			if origin_a == origin_b && offset_a != offset_b {
+				// TODO: take partially overlapping pointers into accouht
+				return false
 			}
 		}
 	}
@@ -71,39 +67,36 @@ do_nodes_alias :: proc(a: sb.Node, b: sb.Node) -> bool {
 	return true
 }
 
-is_ptr_local :: proc(a: sb.Node) -> bool {
-	return sb.node_type(simple_ptr_origin(a)) == .Local
+is_ptr_local :: proc(a: sb.Node_Edge) -> bool {
+	return sb.node_type(simple_ptr_origin(a).node) == .Local
 }
 
-simple_ptr_offset :: proc(n: sb.Node, origin: sb.Node) -> Maybe(u32) {
+simple_ptr_offset :: proc(n: sb.Node_Edge) -> (sb.Node_Edge, u32) {
 	offset := u32(0)
 	current := n
 	for {
-		if current == origin {
-			return offset
-		}
-		#partial switch sb.node_type(n) {
+		#partial switch sb.node_type(current.node) {
 		case .Member_Access:
-			offset += sb.node_data(current).member_access.offset
-			current = sb.node_parent(current, 0).node
+			offset += sb.node_data(current.node).member_access.offset
+			current = sb.node_parent(current.node, 0)
 		case .Array_Access:
-			// TODO
-			return nil
+			// TODO: check if array access is constant
+			return current, offset
 		case:
-			return nil
+			return current, offset
 		}
 	}
 }
 
-simple_ptr_parent :: proc(n: sb.Node) -> Maybe(sb.Node) {
-	#partial switch sb.node_type(n) {
+simple_ptr_parent :: proc(n: sb.Node_Edge) -> Maybe(sb.Node_Edge) {
+	#partial switch sb.node_type(n.node) {
 	case .Member_Access, .Array_Access:
-		return sb.node_parent(n, 0).node
+		return sb.node_parent(n.node, 0)
 	}
 	return nil
 }
 
-simple_ptr_origin :: proc(n: sb.Node) -> sb.Node {
+simple_ptr_origin :: proc(n: sb.Node_Edge) -> sb.Node_Edge {
 	current := n
 	for {
 		if parent, ok := simple_ptr_parent(current).?; ok {

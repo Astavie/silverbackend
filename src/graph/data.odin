@@ -18,27 +18,27 @@ Data_Type_Enum :: enum u8 {
 }
 
 Data_Type :: struct #raw_union {
-	base: bit_field u16 {
+	base:    bit_field u16 {
 		type: Data_Type_Enum | 4,
-		_pad: u16 | 12,
+		_pad: u16            | 12,
 	},
 	integer: bit_field u16 {
 		type: Data_Type_Enum | 4,
-		bits: u16 | 12,
+		bits: u16            | 12,
 	},
 	pointer: bit_field u16 {
-		type: Data_Type_Enum | 4,
-		align_exp: u8 | 4,
-		address_space: u8 | 8,
+		type:          Data_Type_Enum | 4,
+		align_exp:     u8             | 4,
+		address_space: u8             | 8,
 	},
 }
 
 type_int :: proc "contextless" (bits: u16) -> Data_Type {
-	return { integer = { type = .Integer, bits = bits } }
+	return {integer = {type = .Integer, bits = bits}}
 }
 
-type_ptr :: proc "contextless" (align_exp: u8, address_space: u8) -> Data_Type {
-	return { pointer = { type = .Pointer, align_exp = align_exp, address_space = address_space } }
+type_ptr :: proc "contextless" (align_exp: u8, address_space: u8 = 0) -> Data_Type {
+	return {pointer = {type = .Pointer, align_exp = align_exp, address_space = address_space}}
 }
 
 // TYPE_IO : Data_Type : { base = { type = .IO } }
@@ -53,23 +53,23 @@ type_ptr :: proc "contextless" (align_exp: u8, address_space: u8) -> Data_Type {
 // TYPE_I64 : Data_Type : { integer = { type = .Integer, bits = 64 } }
 
 type_io :: proc "contextless" () -> Data_Type {
-	return { base = { type = .IO } }
+	return {base = {type = .IO}}
 }
 
 type_memory :: proc "contextless" () -> Data_Type {
-	return { base = { type = .Memory } }
+	return {base = {type = .Memory}}
 }
 
 type_control :: proc "contextless" () -> Data_Type {
-	return { base = { type = .Control } }
+	return {base = {type = .Control}}
 }
 
 type_unit :: proc "contextless" () -> Data_Type {
-	return { integer = { type = .Integer, bits = 0 } }
+	return {integer = {type = .Integer, bits = 0}}
 }
 
 type_bool :: proc "contextless" () -> Data_Type {
-	return { integer = { type = .Integer, bits = 1 } }
+	return {integer = {type = .Integer, bits = 1}}
 }
 
 type_name :: proc(buf: ^strings.Builder, type: Data_Type) {
