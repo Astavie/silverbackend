@@ -3,6 +3,7 @@ package optimization
 import sb "../graph"
 import "core:math"
 import "core:math/big"
+import "core:mem"
 import "core:slice"
 
 // GLOBAL PASSES
@@ -268,11 +269,30 @@ pass_merge_stores :: proc(n: sb.Node) {
 					world_edge = edge
 				}
 			} else {
-				// TODO: handle err
-				keys, err := slice.map_keys(worlds)
-				defer delete(keys)
-				// TODO: this clones the keys again for no reason
-				world_edge = {sb.push(sb.node_merge(keys)), 0}
+				// make allocator error optional
+				map_keys :: proc(
+					m: $M/map[$K]$V,
+					allocator := context.allocator,
+				) -> (
+					keys: []K,
+					err: mem.Allocator_Error,
+				) #optional_allocator_error {
+					return slice.map_keys(m, allocator)
+				}
+
+				keys := map_keys(worlds)
+				world_edge = {
+					sb.push(
+						{
+							merge = {
+								type = .Merge,
+								varargs = u32(len(keys)),
+								inputs = raw_data(keys),
+							},
+						},
+					),
+					0,
+				}
 			}
 
 			// create store
