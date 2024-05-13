@@ -27,17 +27,26 @@ graph :: proc() -> ^Graph {
 	return transmute(^Graph)context.user_ptr
 }
 
-push :: proc(node_data: Node_Data) -> (Node, mem.Allocator_Error) #optional_allocator_error {
+push :: proc(
+	node_data: Node_Data,
+	loc := #caller_location,
+) -> (
+	Node,
+	mem.Allocator_Error,
+) #optional_allocator_error {
 	g := graph()
-	_, err := append(&g.nodes, node_data)
+	_, err := append(&g.nodes, node_data, loc)
 	return Node(len(g.nodes) - 1), err
 }
 
-or_panic :: proc(a: $A, b: $B) -> A {
-	if b != nil {
-		panic("unreachable")
+node_is_ancestor :: proc(ancestor: Node, descendant: Node) -> bool {
+	for input in node_inputs(descendant) {
+		if input.node == ancestor do return true
 	}
-	return a
+	for input in node_inputs(descendant) {
+		if node_is_ancestor(ancestor, input.node) do return true
+	}
+	return false
 }
 
 sbprint_graph :: proc(buf: ^strings.Builder) {
@@ -69,12 +78,11 @@ sbprint_graph :: proc(buf: ^strings.Builder) {
 						j = chars - i - 1
 					}
 
-					byte := or_panic(
-						big.int_bitfield_extract(
-							node.integer.int_big,
-							int(j) * int(char_bits),
-							int(char_bits),
-						),
+					// TODO: handle error
+					byte, err := big.int_bitfield_extract(
+						node.integer.int_big,
+						int(j) * int(char_bits),
+						int(char_bits),
 					)
 					fmt.sbprintf(buf, template, byte)
 				}

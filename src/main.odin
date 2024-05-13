@@ -100,4 +100,10 @@ main :: proc() {
 	buf2 := strings.builder_make_none()
 	sb.sbprint_graph(&buf2)
 	fmt.println(strings.to_string(buf2))
+
+	// get node order
+	slice := sb.function_graph_order(0)
+	for node in slice {
+		fmt.println(node, sb.node_type(node))
+	}
 }

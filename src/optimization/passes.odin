@@ -11,17 +11,18 @@ import "core:slice"
 perform_remove_dead :: proc() {
 	g := sb.graph()
 
-	// TODO: Remove unused functions
-
 	// Find all nodes that are ancestors of End nodes
 	// These do not include Start, End, or Pass nodes
 	ancestors := make(map[sb.Node]struct {})
 	defer delete(ancestors)
 
 	add_ancestors :: proc(ancestors: ^map[sb.Node]struct {}, node: sb.Node) {
-		inputs := len(sb.node_inputs(node))
-		for i := 0; i < inputs; i += 1 {
-			parent := sb.node_parent(node, i).node
+		inputs := sb.node_inputs(node)
+		for i := 0; i < len(inputs); i += 1 {
+			// reparent to canonical parents
+			inputs[i] = sb.node_parent(node, i)
+			parent := inputs[i].node
+
 			if !(parent in ancestors) {
 				ancestors[parent] = {}
 				add_ancestors(ancestors, parent)
@@ -38,21 +39,12 @@ perform_remove_dead :: proc() {
 		#partial switch g.nodes[i].base.type {
 		case .Start, .End: // do nothing
 		case .Pass:
+			// we reparented everything to their canonical parents
+			// so all pass nodes can be removed
 			varargs := g.nodes[i].pass.varargs
 			if varargs > 0 {
-				// check if no inputs are End ancestors
-				// if so, this Pass node may also be destroyed
-				all_empty := true
-				for j: u32 = 0; j < varargs; j += 1 {
-					if sb.canonical_edge({node = sb.Node(i), output = j}).node in ancestors {
-						all_empty = false
-						break
-					}
-				}
-				if all_empty {
-					sb.node_destroy(g.nodes[i])
-					g.nodes[i] = sb.node_nil()
-				}
+				sb.node_destroy(g.nodes[i])
+				g.nodes[i] = sb.node_nil()
 			}
 		case:
 			if !(sb.Node(i) in ancestors) {
@@ -81,7 +73,6 @@ pass_optimize_merge :: proc(n: sb.Node) {
 		return
 	}
 
-	// NOTE: a simple slice might be faster than map?
 	edges := make(map[sb.Node_Edge]struct {})
 	defer delete(edges)
 
@@ -128,7 +119,6 @@ pass_merge_stores :: proc(n: sb.Node) {
 	}
 
 	// map from "ptr origin" -> "constant stores"
-	// NOTE: a simple slice might be faster than map?
 	stores := make(map[sb.Node_Edge][dynamic]ConstantStore)
 	defer delete(stores)
 
@@ -193,6 +183,9 @@ pass_merge_stores :: proc(n: sb.Node) {
 					start = end_offset - store.ptr_offset - u32(size)
 				}
 
+				// NOTE: this will do a bitwise OR when encountering overlapping stores
+				// in reality, overlapping stores SHOULD not occur
+				// perhaps we can check for this and give a poison value
 				if store.int_value.integer.int_big == nil {
 					value := store.int_value.integer.int_literal
 					big_bitfield_or(
@@ -243,18 +236,8 @@ pass_merge_stores :: proc(n: sb.Node) {
 					world_edge = edge
 				}
 			} else {
-				// make allocator error optional
-				map_keys :: proc(
-					m: $M/map[$K]$V,
-					allocator := context.allocator,
-				) -> (
-					keys: []K,
-					err: mem.Allocator_Error,
-				) #optional_allocator_error {
-					return slice.map_keys(m, allocator)
-				}
-
-				keys := map_keys(worlds)
+				// TODO: handle error
+				keys, err := slice.map_keys(worlds)
 				world_edge = {
 					sb.push(
 						{

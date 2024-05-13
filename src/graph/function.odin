@@ -61,3 +61,46 @@ end_function :: proc(
 
 	return .None
 }
+
+function_is_constant :: proc(function: Function) -> bool {
+	data := graph().functions[int(function)]
+	return !node_is_ancestor(data.end, data.start)
+}
+
+function_graph_order :: proc(
+	function: Function,
+	allocator := context.allocator,
+	loc := #caller_location,
+) -> (
+	slice: []Node,
+	err: mem.Allocator_Error,
+) #optional_allocator_error {
+	nodes := make([dynamic]Node) or_return
+
+	seen := make(map[Node]struct {}, allocator = allocator, loc = loc) or_return
+	defer delete(seen)
+
+	visit :: proc(
+		node: Node,
+		seen: ^map[Node]struct {},
+		nodes: ^[dynamic]Node,
+		loc := #caller_location,
+	) -> mem.Allocator_Error {
+		if (node in seen) do return nil
+
+		for edge in node_inputs(node) {
+			visit(edge.node, seen, nodes, loc) or_return
+		}
+
+		reserve(seen, len(seen) + 1, loc) or_return
+		seen[node] = {}
+
+		append(nodes, node, loc) or_return
+
+		return nil
+	}
+
+	visit(graph().functions[int(function)].end, &seen, &nodes, loc) or_return
+
+	return nodes[:], nil
+}
