@@ -121,8 +121,6 @@ pass_merge_stores :: proc(n: sb.Node) {
 		return
 	}
 
-	// NOTE: this might be optimized using an Interval tree or a Segment tree?
-
 	ConstantStore :: struct {
 		merge_input: u32,
 		ptr_offset:  u32,
@@ -168,98 +166,74 @@ pass_merge_stores :: proc(n: sb.Node) {
 		defer delete(constants)
 		if len(constants) == 1 do continue
 
-		// sort by starting offset
-		slice.sort_by_key(constants[:], proc(c: ConstantStore) -> u32 {return c.ptr_offset})
+		store_interval :: proc(c: ConstantStore) -> (u32, u32) {
+			return c.ptr_offset, c.ptr_offset + u32(sb.type_size(c.int_value.integer.int_type))
+		}
 
-		current := 0
-		next := 1
+		// iterate over overlapping segments
+		constants_slice := constants[:]
+		slice.sort_by_key(constants_slice, proc(c: ConstantStore) -> u32 {return c.ptr_offset})
+		for overlapping in get_overlapping_by(&constants_slice, store_interval) {
+			// do not do anything if there is nothing to merge
+			if len(overlapping) == 1 do continue
 
-		for current < len(constants) {
-			from_offset := constants[current].ptr_offset
+			// get total range
+			start_offset, _ := store_interval(overlapping[0])
+			_, end_offset := store_interval(overlapping[len(overlapping) - 1])
 
-			int_value := constants[current].int_value
-			div, to_bits := math.divmod(int_value.integer.int_type.integer.bits, char_bits)
-			to_offset := from_offset + u32(div)
+			// NOTE: currently, the overlap will always extend to a regular bit width (multiple of the character size)
+			// but it is possible that in reality, it should be a non-regular bit width
 
-			// create u16 buffer
-			// NOTE: this does not support targets with char size bigger than 16 bits
-			buf := make([dynamic]u16)
-			defer delete(buf)
-
-			populate_int_buffer(&buf, int_value, 0)
-
-			// merge following stores
-			for next < len(constants) {
-				offset := constants[next].ptr_offset
-				if offset <= to_offset {
-					defer next += 1
-
-					int_value2 := constants[next].int_value
-					div2, to_bits2 := math.divmod(
-						int_value2.integer.int_type.integer.bits,
-						char_bits,
-					)
-					to_offset2 := offset + u32(div2)
-
-					if to_offset2 > to_offset {
-						to_offset = to_offset2
-						to_bits2 = to_bits
-					} else if to_bits2 > to_bits {
-						to_bits2 = to_bits
-					}
-
-					// FIXME: this can overflow!
-					populate_int_buffer(&buf, int_value2, u16(offset - from_offset))
-				} else {
-					break
-				}
-			}
-
-			defer current = next
-
-			// get integer literal
+			// create the merged integer literal
 			int_big := big.Int{}
-			switch sb.graph().target.endian {
-			case .Little:
-				slice.reverse(buf[:])
-				for i in buf {
-					big.int_shl(&int_big, &int_big, int(char_bits))
-					big.int_add_digit(&int_big, &int_big, big.DIGIT(i))
+			for store in overlapping {
+				size := sb.type_size(store.int_value.integer.int_type)
+				start := store.ptr_offset - start_offset
+				if sb.graph().target.endian == .Big {
+					start = end_offset - store.ptr_offset - u32(size)
 				}
-			case .Big:
-				for i, idx in buf {
-					if to_bits > 0 && idx == len(buf) - 1 {
-						big.int_shl(&int_big, &int_big, int(to_bits))
-					} else {
-						big.int_shl(&int_big, &int_big, int(char_bits))
-					}
-					big.int_add_digit(&int_big, &int_big, big.DIGIT(i))
+
+				if store.int_value.integer.int_big == nil {
+					value := store.int_value.integer.int_literal
+					big_bitfield_or(
+						&int_big,
+						int(start) * int(char_bits),
+						int(size) * int(char_bits),
+						big._WORD(value),
+					)
+				} else {
+					shifted := big.Int{}
+					defer big.destroy(&shifted)
+
+					big.copy(&shifted, store.int_value.integer.int_big)
+					big.shl(&shifted, &shifted, int(start) * int(char_bits))
+					big.bit_or(&int_big, &int_big, &shifted)
 				}
 			}
 
+			// create integer literal node
 			// FIXME: this can overflow!
-			int_size := u16(to_offset - from_offset) * char_bits + to_bits
+			int_size := u16(end_offset - start_offset) * char_bits
 			int_node := sb.push(sb.node_constant(sb.type_int(int_size), int_big))
 
-			// create offset pointer
+			// create ptr member access node
 			ptr_edge := origin
 			ptr_node := origin.node
 			if sb.node_type(ptr_node) == .Local {
 				ptr_edge.output = 1
 			}
 
-			if from_offset != 0 {
-				ptr_node = sb.push(sb.node_member_access(ptr_edge, from_offset))
+			if start_offset != 0 {
+				ptr_node = sb.push(sb.node_member_access(ptr_edge, start_offset))
 				ptr_edge = sb.Node_Edge{ptr_node, 0}
 			}
 
-			// create merged world
-			// NOTE: a simple slice might be faster than map?
+			// create merged world node
 			worlds := make(map[sb.Node_Edge]struct {})
 			defer delete(worlds)
 
-			for i in current ..< next {
-				world := sb.node_parent(sb.node_parent(n, int(constants[i].merge_input)).node, 0)
+			for store in overlapping {
+				world := sb.node_parent(sb.node_parent(n, int(store.merge_input)).node, 0)
 				worlds[world] = {}
 			}
 
@@ -295,13 +269,13 @@ pass_merge_stores :: proc(n: sb.Node) {
 				}
 			}
 
-			// create store
+			// create merged store node
 			store_node := sb.push(sb.node_store(world_edge, ptr_edge, {int_node, 0}))
 
 			// redirect merge inputs to new store
 			inputs := sb.node_inputs(n)
-			for i in current ..< next {
-				inputs[int(constants[i].merge_input)] = {store_node, 0}
+			for store in overlapping {
+				inputs[int(store.merge_input)] = {store_node, 0}
 			}
 		}
 	}

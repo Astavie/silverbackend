@@ -1,6 +1,7 @@
 package optimization
 
 import sb "../graph"
+import "base:intrinsics"
 import "core:math/big"
 import "core:slice"
 
@@ -154,35 +155,68 @@ simple_memory_ancestor :: proc(a: sb.Node, b: sb.Node) -> Maybe(sb.Node) {
 	}
 }
 
-populate_int_buffer :: proc(
-	buf: ^[dynamic]u16,
-	data: ^sb.Node_Data,
-	buf_offset: u16,
-) -> big.Error {
-	size := sb.type_size(data.integer.int_type)
-	resize(buf, int(buf_offset + size))
-
-	char_bits := sb.graph().target.char_bits
-	bit_mask: i32 = (1 << char_bits) - 1
-
-	current := int(buf_offset)
-
-	if data.integer.int_big != nil {
-		num := data.integer.int_big
-		for !(big.is_zero(num) or_return) {
-			defer current += 1
-			buf[current] = u16(big.int_bitfield_extract(num, 0, int(char_bits)) or_return)
-			big.int_shr(num, num, int(char_bits)) or_return
-		}
-	} else {
-		// FIXME: I don't think this works with negative ints yet
-		num := data.integer.int_literal
-		for num != 0 {
-			defer current += 1
-			buf[current] = u16(num & bit_mask)
-			num = num >> char_bits
-		}
+// assumes the intervals are sorted by interval start!
+get_overlapping_by :: proc(
+	intervals: ^[]$T,
+	interval: proc(t: T) -> ($K, K),
+) -> (
+	overlapping: []T,
+	ok: bool,
+) where intrinsics.type_is_ordered(K) {
+	if len(intervals^) == 0 {
+		ok = false
+		return
 	}
 
-	return .Okay
+	_, end := interval(intervals[0])
+
+	next := 1
+	for next < len(intervals^) {
+		start_next, end_next := interval(intervals[next])
+		if start_next > end do break
+
+		end = end_next
+		next += 1
+	}
+
+	overlapping = intervals[:next]
+	ok = true
+
+	intervals^ = intervals[next:]
+	return
+}
+
+big_bitfield_or :: proc(a: ^big.Int, offset, count: int, value: big._WORD) -> big.Error {
+
+	big.int_grow(a, offset + count) or_return
+
+	limb := offset / big._DIGIT_BITS
+	bits_left := count
+	bits_offset := offset % big._DIGIT_BITS
+
+	num_bits := min(bits_left, big._DIGIT_BITS - bits_offset)
+
+	shift := offset % big._DIGIT_BITS
+	mask := (big._WORD(1) << uint(num_bits)) - 1
+
+	a.digit[limb] |= big.DIGIT((value & mask) << uint(shift))
+
+	bits_left -= num_bits
+	if bits_left == 0 do return nil
+
+	res_shift := num_bits
+	num_bits = min(bits_left, big._DIGIT_BITS)
+	mask = (1 << uint(num_bits)) - 1
+
+	a.digit[limb + 1] |= big.DIGIT((value & mask) >> uint(res_shift))
+
+	bits_left -= num_bits
+	if bits_left == 0 do return nil
+
+	mask = (1 << uint(bits_left)) - 1
+	res_shift += big._DIGIT_BITS
+
+	a.digit[limb + 2] |= big.DIGIT((value & mask) >> uint(res_shift))
+
+	return nil
 }
